@@ -81,7 +81,7 @@ bot.on("left_chat_member", async (ctx) => {
 
 let warnings = {};
 
-// مراقبة الشتائم والروابط مع استثناء المالك والمشرفين و AnonymousBot تماماً
+// مراقبة الشتائم والروابط
 bot.on("message", async (ctx) => {
   try {
     if (ctx.chat.type === "private") return;
@@ -90,7 +90,6 @@ bot.on("message", async (ctx) => {
     const user = ctx.from;
     if (!user) return;
 
-    // استثناء البوت المجهول للمشرفين (GroupAnonymousBot) أو المالك
     if (user.is_bot && user.username === "GroupAnonymousBot") return;
 
     const member = await ctx.telegram.getChatMember(ctx.chat.id, user.id);
@@ -144,7 +143,7 @@ bot.on("message", async (ctx) => {
   } catch (err) {}
 });
 
-// أوامر الإدارة (كتم بالرد)
+// أوامر الإدارة والكتم بالرد
 bot.hears(/^كتم/i, async (ctx) => {
   if (!ctx.message.reply_to_message?.from) return ctx.reply("↩️ اعمل Reply على رسالة العضو واكتب: كتم");
   const target = ctx.message.reply_to_message.from;
@@ -156,7 +155,6 @@ bot.hears(/^كتم/i, async (ctx) => {
   }
 });
 
-// فك الكتم بالرد
 bot.hears(/^فك الكتم/i, async (ctx) => {
   if (!ctx.message.reply_to_message?.from) return ctx.reply("↩️ اعمل Reply على رسالة العضو واكتب: فك الكتم");
   const target = ctx.message.reply_to_message.from;
@@ -170,7 +168,6 @@ bot.hears(/^فك الكتم/i, async (ctx) => {
   }
 });
 
-// حظر بالرد
 bot.hears(/^حظر/i, async (ctx) => {
   if (!ctx.message.reply_to_message?.from) return ctx.reply("↩️ اعمل Reply على رسالة العضو واكتب: حظر");
   const target = ctx.message.reply_to_message.from;
@@ -182,7 +179,7 @@ bot.hears(/^حظر/i, async (ctx) => {
   }
 });
 
-// أوامر المسح والحذف الدقيقة
+// أوامر المسح الذكية
 bot.hears(/^مسح للجميع$/i, async (ctx) => {
   const chatId = ctx.chat.id;
   let msgId = ctx.message.message_id;
@@ -209,7 +206,7 @@ bot.hears(/^مسح(\s+\d+)?$/i, async (ctx) => {
       if (replyMsg) await ctx.telegram.deleteMessage(chatId, replyMsg.message_id);
       await ctx.telegram.deleteMessage(chatId, ctx.message.message_id);
     } catch (e) {
-      await ctx.reply("❌ تأكد أن البوت يمتلك صلاحية حذف الرسائل.");
+      await ctx.reply("❌ تأكد أن البوت مشرف ولديه صلاحية حذف الرسائل.");
     }
     return;
   }
@@ -231,7 +228,7 @@ bot.hears(/^مسح(\s+\d+)?$/i, async (ctx) => {
 });
 
 bot.hears(/^المكتومين$/i, async (ctx) => {
-  await ctx.reply("🔇 لعرض أو فك الكتم عن أي عضو، قم بالرد (Reply) على رسالته واكتب: `فك الكتم`.");
+  await ctx.reply("🔇 تليجرام لا يدعم جلب قائمة المكتومين برمجياً. لإدارة الكتم، استخدم الرد (Reply) على رسالة العضو واكتب: `فك الكتم` أو `كتم`.");
 });
 
 async function startBot() {
