@@ -342,11 +342,10 @@ bot.catch((err, ctx) => {
   console.error(`❌ خطأ في التعامل مع التحديث ${ctx.updateType}:`, err);
 });
 
-bot.launch().then(() => {
-  console.log("✅ البوت يعمل بنجاح");
-}).catch(err => {
-  console.error("❌ فشل تشغيل البوت:", err);
-});
+bot.launch();
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+// Enable graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+console.log("✅ البوت يعمل الآن بنجاح!");
