@@ -35,11 +35,11 @@ const BAD_WORDS = [
   "دين امك"
 ];
 
-// التحقق لو الشخص مالك الجروب أو مشرف
+// دالة دقيقة جداً للتحقق لو الشخص مالك الجروب أو مشرف
 async function isAdminOrOwner(ctx, userId) {
   try {
     const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, userId);
-    return chatMember.status === "administrator" || chatMember.status === "creator";
+    return chatMember.status === "creator" || chatMember.status === "administrator";
   } catch {
     return false;
   }
@@ -98,23 +98,23 @@ bot.on("left_chat_member", async (ctx) => {
   } catch (err) {}
 });
 
-// تخزين التحذيرات مؤقتًا في الذاكرة
 let warnings = {};
 
-// مراقبة الشتائم والروابط (استثناء المالك والمشرفين تماماً)
+// مراقبة الشتائم والروابط (استثناء تام للمالك والمشرفين)
 bot.on("message", async (ctx) => {
   try {
     if (ctx.chat.type === "private") return;
     if (!ctx.message.text) return;
 
-    const text = ctx.message.text.trim();
-    const adminCommands = ["كتم", "فك الكتم", "تحذير", "تحذيرات", "مسح التحذيرات", "حذف", "احصائيات", "طرد", "حظر", "فك الحظر", "المكتومين", "مسح"];
-    if (adminCommands.some(cmd => text.startsWith(cmd))) return;
-
     const user = ctx.from;
     if (!user) return;
 
+    // لو الشخص مالك الجروب أو مشرف، يتم تجاهل رسالته فوراً بدون أي فحص أو إنذار
     if (await isAdminOrOwner(ctx, user.id)) return;
+
+    const text = ctx.message.text.trim();
+    const adminCommands = ["كتم", "فك الكتم", "تحذير", "تحذيرات", "مسح التحذيرات", "حذف", "احصائيات", "طرد", "حظر", "فك الحظر", "المكتومين", "مسح"];
+    if (adminCommands.some(cmd => text.startsWith(cmd))) return;
 
     const chatId = ctx.chat.id;
     const userId = user.id;
@@ -170,7 +170,7 @@ bot.hears(/^كتم/i, async (ctx) => {
       await ctx.telegram.restrictChatMember(ctx.chat.id, target.id, { permissions: { can_send_messages: false } });
       await ctx.reply(`🔇 تم كتم العضو ${getName(target)} نهائياً بأمر الإدارة.`);
     } catch (e) {
-      await ctx.reply(`❌ خطأ: ${e.message}`);
+      await ctx.reply(`❌ خطأ: تأكد أن البوت مشرف ولديه صلاحية تقييد الأعضاء.`);
     }
   } else {
     return ctx.reply("↩️ اعمل Reply على رسالة العضو واكتب: كتم");
@@ -190,7 +190,7 @@ bot.hears(/^فك الكتم/i, async (ctx) => {
       });
       await ctx.reply(`🔊 تم فك الكتم عن العضو ${getName(target)} بنجاح.`);
     } catch (e) {
-      await ctx.reply(`❌ خطأ: ${e.message}`);
+      await ctx.reply(`❌ خطأ: تأكد أن البوت مشرف.`);
     }
   } else {
     return ctx.reply("↩️ اعمل Reply على رسالة العضو واكتب: فك الكتم");
@@ -205,14 +205,14 @@ bot.hears(/^حظر/i, async (ctx) => {
       await ctx.telegram.banChatMember(ctx.chat.id, target.id);
       await ctx.reply(`⛔ تم حظر العضو ${getName(target)} نهائياً.`);
     } catch (e) {
-      await ctx.reply(`❌ خطأ: ${e.message}`);
+      await ctx.reply(`❌ خطأ: تأكد أن البوت مشرف ولديه صلاحية حظر الأعضاء.`);
     }
   } else {
     return ctx.reply("↩️ اعمل Reply على رسالة العضو واكتب: حظر");
   }
 });
 
-// أوامر الحذف والمسح المتقدمة
+// أوامر الحذف والمسح
 bot.hears(/^مسح للجميع$/i, async (ctx) => {
   if (!(await isAdminOrOwner(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   
@@ -221,8 +221,7 @@ bot.hears(/^مسح للجميع$/i, async (ctx) => {
   let deletedCount = 0;
 
   try {
-    // محاولة حذف آخر 50 رسالة بالتسلسل تنازلياً
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 40; i++) {
       try {
         await ctx.telegram.deleteMessage(chatId, currentMsgId);
         deletedCount++;
@@ -235,7 +234,7 @@ bot.hears(/^مسح للجميع$/i, async (ctx) => {
       try { ctx.telegram.deleteMessage(chatId, notify.message_id); } catch {}
     }, 3000);
   } catch (e) {
-    await ctx.reply("❌ حدث خطأ أثناء محاولة مسح الرسائل.");
+    await ctx.reply("❌ حدث خطأ، تأكد أن البوت يمتلك صلاحية حذف الرسائل.");
   }
 });
 
@@ -247,7 +246,6 @@ bot.hears(/^مسح(\s+\d+)?$/i, async (ctx) => {
   const chatId = ctx.chat.id;
   const replyMsg = ctx.message.reply_to_message;
 
-  // الحالة الأولى: لو مكتوب "مسح" لوحدها أو بالرد على رسالة
   if (parts.length === 1) {
     try {
       if (replyMsg) {
@@ -255,12 +253,11 @@ bot.hears(/^مسح(\s+\d+)?$/i, async (ctx) => {
       }
       await ctx.telegram.deleteMessage(chatId, ctx.message.message_id);
     } catch (e) {
-      await ctx.reply("❌ عذراً، لا أستطيع حذف هذه الرسالة (ربما تكون قديمة جداً).");
+      await ctx.reply("❌ عذراً، لا أستطيع حذف هذه الرسالة.");
     }
     return;
   }
 
-  // الحالة الثانية: لو مكتوب "مسح [رقم]" (مثل مسح 5)
   const count = parseInt(parts[1]);
   if (isNaN(count) || count < 1) {
     return ctx.reply("⚠️ يرجى كتابة رقم صحيح بعد كلمة مسح (مثال: مسح 5)");
@@ -278,25 +275,25 @@ bot.hears(/^مسح(\s+\d+)?$/i, async (ctx) => {
       currentMsgId--;
     }
 
-    const successMsg = await ctx.reply(`🗑️ تم مسح آخر ${count} رسائل بنجاح.`);
+    const successMsg = await ctx.reply(`🗑️ تم مسح ${deleted} رسالة بنجاح.`);
     setTimeout(() => {
       try { ctx.telegram.deleteMessage(chatId, successMsg.message_id); } catch {}
     }, 3000);
   } catch (e) {
-    await ctx.reply("❌ حدث خطأ أثناء مسح الرسائل.");
+    await ctx.reply("❌ حدث خطأ، تأكد أن البوت مشرف وله صلاحية حذف الرسائل.");
   }
 });
 
 bot.hears(/^المكتومين$/i, async (ctx) => {
   if (!(await isAdminOrOwner(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
-  await ctx.reply("ℹ️ لمعرفة المكتومين، استخدم خاصية الرد (Reply) أو راجع قائمة الصلاحيات في إعدادات الجروب.");
+  await ctx.reply("🔇 **إدارة الكتم:**\nلعرض وفك الكتم عن أي عضو، قم بالرد (Reply) على رسالته واكتب: `فك الكتم`.");
 });
 
 async function startBot() {
   try {
     await bot.telegram.deleteWebhook({ drop_pending_updates: true });
     await bot.launch();
-    console.log("✅ Bot started successfully with Advanced Delete features!");
+    console.log("✅ Bot started successfully!");
   } catch (err) {
     console.error("❌ Error starting bot:", err.message);
   }
