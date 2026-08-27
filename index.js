@@ -63,7 +63,6 @@ bot.start((ctx) => {
   }
 });
 
-// ترحيب العضو الجديد
 bot.on("new_chat_members", async (ctx) => {
   for (const member of ctx.message.new_chat_members) {
     const name = getName(member);
@@ -83,7 +82,6 @@ bot.on("new_chat_members", async (ctx) => {
   }
 });
 
-// مغادرة العضو
 bot.on("left_chat_member", async (ctx) => {
   const member = ctx.message.left_chat_member;
   if (!member) return;
@@ -104,7 +102,6 @@ bot.on("left_chat_member", async (ctx) => {
   );
 });
 
-// دالة متطورة لجلب العضو المستهدف (بالرد، باليوزر، بالآيدي، أو بالاسم)
 async function getTarget(ctx) {
   if (ctx.message.reply_to_message?.from) {
     return ctx.message.reply_to_message.from;
@@ -112,14 +109,13 @@ async function getTarget(ctx) {
   
   const text = ctx.message.text.trim();
   const parts = text.split(/\s+/);
-  parts.shift(); // إزالة الأمر نفسه
-  const query = parts.join(" ").trim(); // باقي النص (الاسم أو اليوزر أو الآيدي)
+  parts.shift();
+  const query = parts.join(" ").trim();
   
   if (!query) return null;
 
   const chatData = getChatData(ctx.chat.id);
 
-  // لو كاتب آيدي رقمي
   if (/^\d+$/.test(query)) {
     const userId = Number(query);
     if (!chatData.users[userId]) {
@@ -128,7 +124,6 @@ async function getTarget(ctx) {
     return { id: userId, first_name: chatData.users[userId].name, username: chatData.users[userId].username };
   }
 
-  // لو كاتب يوزر أو اسم
   const qClean = query.replace("@", "").toLowerCase();
   for (const uId in chatData.users) {
     const u = chatData.users[uId];
@@ -140,13 +135,11 @@ async function getTarget(ctx) {
     }
   }
 
-  // لو العضو مش متسجل، نرجع كائن مؤقت بالاسم المكتوب
   const fakeId = Date.now();
   chatData.users[fakeId] = { name: query, username: query.startsWith("@") ? query : `@${query}`, count: 0, isMuted: false };
   return { id: fakeId, first_name: query, username: chatData.users[fakeId].username };
 }
 
-// مراقبة الشتائم والروابط
 bot.on("message", async (ctx) => {
   if (ctx.chat.type === "private") return;
   if (!ctx.message.text) return;
@@ -201,7 +194,6 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// أوامر الإدارة
 bot.hears(/^تحذير/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
@@ -334,11 +326,18 @@ bot.hears(/^احصائيات$/i, async (ctx) => {
   await ctx.reply(`📊 إجمالي الإنذارات المسجلة: ${total}`);
 });
 
-bot.launch({
-  dropPendingUpdates: true
-}).then(() => {
-  console.log("✅ Bot started successfully!");
-});
+// تدمير أي ويب هوك قديم أو جلسة معلقة تماماً قبل التشغيل لمنع خطأ 409
+async function startBot() {
+  try {
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    await bot.launch();
+    console.log("✅ Bot started successfully without conflict!");
+  } catch (err) {
+    console.error("❌ Error starting bot:", err.message);
+  }
+}
+
+startBot();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
