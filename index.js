@@ -64,7 +64,6 @@ bot.start((ctx) => {
   }
 });
 
-// رسالة الترحيب الجديدة بالوقت والتاريخ واسم القناة
 bot.on("new_chat_members", async (ctx) => {
   for (const member of ctx.message.new_chat_members) {
     const name = getName(member);
@@ -131,7 +130,6 @@ async function getTarget(ctx) {
   return null;
 }
 
-// مراقبة الشتائم وحذفها وإنذار العضو
 bot.on("message", async (ctx) => {
   if (ctx.chat.type === "private") return;
   if (!ctx.message.text) return;
@@ -265,8 +263,8 @@ bot.hears(/^فك الحظر/i, async (ctx) => {
   try {
     await ctx.telegram.unbanChatMember(ctx.chat.id, target.id);
     await ctx.reply(`✅ تم رفع الحظر.`);
-  } catch (e) { ctx.reply(`❌ خطأ: ${e.message}`); الترحيب الجديد في الجروب
-} });
+  } catch (e) { ctx.reply(`❌ خطأ: ${e.message}`); }
+});
 
 bot.hears(/^المكتومين$/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
@@ -296,4 +294,4 @@ bot.hears(/^احصائيات$/i, async (ctx) => {
 });
 
 bot.launch();
-console.log("✅ Bot started successfully with Express!");
+console.log("✅ Bot started successfully!");
