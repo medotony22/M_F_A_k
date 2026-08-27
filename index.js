@@ -1,29 +1,30 @@
 const { Telegraf } = require("telegraf");
-const http = require("http");
+const express = require("express");
 
+const app = express();
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-  res.write("🤖 البوت يعمل بنجاح!");
-  res.end();
-}).listen(PORT, () => {
-  console.log(`🌐 Server is running on port ${PORT}`);
+
+app.get("/", (req, res) => {
+  res.send("🤖 Bot is running successfully!");
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Web server is running on port ${PORT}`);
 });
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_LINK = "https://t.me/faka_m";
 
 if (!BOT_TOKEN) {
+  console.error("❌ BOT_TOKEN is missing!");
   process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 bot.telegram.deleteWebhook({ drop_pending_updates: true });
 
-// الذاكرة المؤقتة للتحذيرات والمكتومين
 let db = {};
 
-// قائمة الكلمات المسيئة والممنوعة المحددة
 const BAD_WORDS = [
   "كسمك",
   "كس",
@@ -57,14 +58,12 @@ function getName(user) {
   return [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "العضو";
 }
 
-// الترحيب في الخاص
 bot.start((ctx) => {
   if (ctx.chat.type === "private") {
     ctx.reply(`🤖 أهلاً بيك يا ${getName(ctx.from)} في بوت الحماية والترحيب.`);
   }
 });
 
-// ترحيب العضو الجديد والصيغة المطلوبة
 bot.on("new_chat_members", async (ctx) => {
   for (const member of ctx.message.new_chat_members) {
     const name = getName(member);
@@ -84,7 +83,6 @@ bot.on("new_chat_members", async (ctx) => {
   }
 });
 
-// خروج العضو مع التقارير المفصلة
 bot.on("left_chat_member", async (ctx) => {
   const member = ctx.message.left_chat_member;
   if (!member) return;
@@ -105,7 +103,6 @@ bot.on("left_chat_member", async (ctx) => {
   );
 });
 
-// جلب العضو المستهدف للأوامر (بالرد أو باليوزر أو الآيدي)
 async function getTarget(ctx) {
   if (ctx.message.reply_to_message?.from) return ctx.message.reply_to_message.from;
   const parts = ctx.message.text.trim().split(/\s+/);
@@ -133,7 +130,6 @@ async function getTarget(ctx) {
   return null;
 }
 
-// مراقبة الرسائل والروابط والكلمات المسيئة
 bot.on("message", async (ctx) => {
   if (ctx.chat.type === "private") return;
   if (!ctx.message.text) return;
@@ -179,7 +175,7 @@ bot.on("message", async (ctx) => {
           permissions: { can_send_messages: false }
         });
         chatData.users[user.id].isMuted = true;
-        await ctx.reply(`🚨 **كتم دائم**\n👤 العضو: ${name} (${username})\n📌 السبب: ${reason}\n⚠️ عدد المخالفات: ${count} (تم الكتم النهائي، ولن يتم فكه إلا بواسطة الإدارة).`);
+        await ctx.reply(`🚨 **كتم دائم**\n👤 العضو: ${name} (${username})\n📌 السبب: ${reason}\n⚠️ عدد المخالفات: ${count} (تم الكتم النهائي ولن يُفك إلا بواسطة الإدارة).`);
       } catch {}
       return;
     }
@@ -188,7 +184,6 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// أوامر الإدارة
 bot.hears(/^تحذير/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
@@ -299,4 +294,4 @@ bot.hears(/^احصائيات$/i, async (ctx) => {
 });
 
 bot.launch();
-console.log("✅ البوت يعمل بكامل الخصائص والكلمات المسيئة بنجاح!");
+console.log("✅ Bot started successfully with Express!");
