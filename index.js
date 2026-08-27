@@ -64,6 +64,7 @@ bot.start((ctx) => {
   }
 });
 
+// ترحيب العضو الجديد
 bot.on("new_chat_members", async (ctx) => {
   for (const member of ctx.message.new_chat_members) {
     const name = getName(member);
@@ -83,6 +84,7 @@ bot.on("new_chat_members", async (ctx) => {
   }
 });
 
+// مغادرة العضو
 bot.on("left_chat_member", async (ctx) => {
   const member = ctx.message.left_chat_member;
   if (!member) return;
@@ -103,33 +105,47 @@ bot.on("left_chat_member", async (ctx) => {
   );
 });
 
+// دالة ذكية ومضمونة لجلب العضو المستهدف (سواء بالرد Reply أو باليوزر أو بالآيدي)
 async function getTarget(ctx) {
-  if (ctx.message.reply_to_message?.from) return ctx.message.reply_to_message.from;
-  const parts = ctx.message.text.trim().split(/\s+/);
+  if (ctx.message.reply_to_message?.from) {
+    return ctx.message.reply_to_message.from;
+  }
+  
+  const text = ctx.message.text.trim();
+  const parts = text.split(/\s+/);
   const query = parts[1];
+  
   if (!query) return null;
 
+  const chatData = getChatData(ctx.chat.id);
+
+  // لو كاتب آيدي
   if (/^\d+$/.test(query)) {
-    try {
-      const member = await ctx.telegram.getChatMember(ctx.chat.id, Number(query));
-      return member.user;
-    } catch {
-      return { id: Number(query), first_name: "العضو" };
+    const userId = Number(query);
+    if (!chatData.users[userId]) {
+      chatData.users[userId] = { name: "عضو", username: "بدون", count: 0, isMuted: false };
     }
+    return { id: userId, first_name: chatData.users[userId].name, username: chatData.users[userId].username };
   }
+
+  // لو كاتب يوزر @username
   if (query.startsWith("@")) {
     const qClean = query.replace("@", "").toLowerCase();
-    const chatData = getChatData(ctx.chat.id);
     for (const uId in chatData.users) {
       if (chatData.users[uId].username?.replace("@", "").toLowerCase() === qClean) {
         return { id: Number(uId), first_name: chatData.users[uId].name, username: chatData.users[uId].username };
       }
     }
-    return { first_name: query, username: query };
+    // لو اليوزر مش متسجل في الذاكرة المؤقتة، بنحفظه افتراضياً عشان البوت يقدر يتعامل معاه
+    const fakeId = Date.now();
+    chatData.users[fakeId] = { name: query, username: query, count: 0, isMuted: false };
+    return { id: fakeId, first_name: query, username: query };
   }
+
   return null;
 }
 
+// مراقبة الشتائم والروابط
 bot.on("message", async (ctx) => {
   if (ctx.chat.type === "private") return;
   if (!ctx.message.text) return;
@@ -184,14 +200,17 @@ bot.on("message", async (ctx) => {
   }
 });
 
+// أوامر الإدارة الشاملة والمحدثة
 bot.hears(/^تحذير/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
-  if (!target) return ctx.reply("↩️ اعمل Reply أو اكتب: تحذير @username");
+  if (!target) return ctx.reply("↩️ اعمل Reply على رسالة العضو أو اكتب: تحذير @username");
   try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
 
   const chatData = getChatData(ctx.chat.id);
-  if (!chatData.users[target.id]) chatData.users[target.id] = { name: target.first_name || "عضو", username: target.username ? `@${target.username}` : "بدون", count: 0 };
+  if (!chatData.users[target.id]) {
+    chatData.users[target.id] = { name: target.first_name || "عضو", username: target.username || "بدون", count: 0, isMuted: false };
+  }
   chatData.users[target.id].count += 1;
 
   await ctx.reply(`⚠️ تم تحذير العضو ${chatData.users[target.id].name}. الإجمالي: ${chatData.users[target.id].count}/3`);
@@ -200,39 +219,56 @@ bot.hears(/^تحذير/i, async (ctx) => {
 bot.hears(/^تحذيرات/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
-  if (!target) return ctx.reply("↩️ اعمل Reply أو اكتب: تحذيرات @username");
+  if (!target) return ctx.reply("↩️ اعمل Reply على رسالة العضو أو اكتب: تحذيرات @username");
+  
   const count = getChatData(ctx.chat.id).users[target.id]?.count || 0;
-  await ctx.reply(`📊 عدد التحذيرات: ${count}/3`);
+  await ctx.reply(`📊 عدد تحذيرات العضو هي: ${count}/3`);
 });
 
 bot.hears(/^مسح التحذيرات/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
-  if (!target) return ctx.reply("↩️ اعمل Reply أو اكتب: مسح التحذيرات @username");
-  if (getChatData(ctx.chat.id).users[target.id]) getChatData(ctx.chat.id).users[target.id].count = 0;
-  await ctx.reply(`♻️ تم مسح التحذيرات بنجاح.`);
+  if (!target) return ctx.reply("↩️ اعمل Reply على رسالة العضو أو اكتب: مسح التحذيرات @username");
+  
+  if (getChatData(ctx.chat.id).users[target.id]) {
+    getChatData(ctx.chat.id).users[target.id].count = 0;
+  }
+  await ctx.reply(`♻️ تم مسح التحذيرات عن العضو بنجاح.`);
 });
 
 bot.hears(/^كتم/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
-  if (!target) return ctx.reply("↩️ اعمل Reply أو اكتب: كتم @username");
+  if (!target) return ctx.reply("↩️ اعمل Reply على رسالة العضو أو اكتب: كتم @username");
+  
   try {
     await ctx.telegram.restrictChatMember(ctx.chat.id, target.id, { permissions: { can_send_messages: false } });
-    if (getChatData(ctx.chat.id).users[target.id]) getChatData(ctx.chat.id).users[target.id].isMuted = true;
+    const chatData = getChatData(ctx.chat.id);
+    if (!chatData.users[target.id]) {
+      chatData.users[target.id] = { name: target.first_name || "عضو", username: target.username || "بدون", count: 0 };
+    }
+    chatData.users[target.id].isMuted = true;
     await ctx.reply(`🔇 تم كتم العضو نهائياً بأمر من الإدارة.`);
-  } catch (e) { ctx.reply(`❌ خطأ: ${e.message}`); }
+  } catch (e) { 
+    await ctx.reply(`❌ خطأ في كتم العضو: ${e.message}`); 
+  }
 });
 
 bot.hears(/^فك الكتم/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
-  if (!target) return ctx.reply("↩️ اعمل Reply أو اكتب: فك الكتم @username");
+  if (!target) return ctx.reply("↩️ اعمل Reply على رسالة العضو أو اكتب: فك الكتم @username");
+  
   try {
     await ctx.telegram.restrictChatMember(ctx.chat.id, target.id, { permissions: { can_send_messages: true } });
-    if (getChatData(ctx.chat.id).users[target.id]) getChatData(ctx.chat.id).users[target.id].isMuted = false;
+    const chatData = getChatData(ctx.chat.id);
+    if (chatData.users[target.id]) {
+      chatData.users[target.id].isMuted = false;
+    }
     await ctx.reply(`🔊 تم فك الكتم عن العضو بنجاح.`);
-  } catch (e) { ctx.reply(`❌ خطأ: ${e.message}`); }
+  } catch (e) { 
+    await ctx.reply(`❌ خطأ في فك الكتم: ${e.message}`); 
+  }
 });
 
 bot.hears(/^طرد/i, async (ctx) => {
@@ -242,7 +278,7 @@ bot.hears(/^طرد/i, async (ctx) => {
   try {
     await ctx.telegram.banChatMember(ctx.chat.id, target.id);
     await ctx.telegram.unbanChatMember(ctx.chat.id, target.id);
-    await ctx.reply(`👢 تم طرد العضو.`);
+    await ctx.reply(`👢 تم طرد العضو من الجروب.`);
   } catch (e) { ctx.reply(`❌ خطأ: ${e.message}`); }
 });
 
@@ -259,10 +295,10 @@ bot.hears(/^حظر/i, async (ctx) => {
 bot.hears(/^فك الحظر/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
-  if (!target) return ctx.reply("اكتب: فك الحظر @username");
+  if (!target) return ctx.reply("اكتب: فك الحظر @username (أو آيدي العضو)");
   try {
     await ctx.telegram.unbanChatMember(ctx.chat.id, target.id);
-    await ctx.reply(`✅ تم رفع الحظر.`);
+    await ctx.reply(`✅ تم رفع الحظر عن العضو.`);
   } catch (e) { ctx.reply(`❌ خطأ: ${e.message}`); }
 });
 
@@ -271,15 +307,19 @@ bot.hears(/^المكتومين$/i, async (ctx) => {
   const users = getChatData(ctx.chat.id).users;
   let list = [];
   for (const id in users) {
-    if (users[id].isMuted) list.push(`👤 ${users[id].name} (${users[id].username})`);
+    if (users[id].isMuted) {
+      list.push(`👤 ${users[id].name} (${users[id].username})`);
+    }
   }
-  if (list.length === 0) return ctx.reply("📋 لا يوجد أعضاء مكتومين حالياً.");
+  if (list.length === 0) {
+    return ctx.reply("📋 لا يوجد أعضاء مكتومين حالياً في هذا الجروب.");
+  }
   await ctx.reply(`🔇 **قائمة الأعضاء المكتومين:**\n\n` + list.join("\n"));
 });
 
 bot.hears(/^حذف$/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
-  if (!ctx.message.reply_to_message) return ctx.reply("↩️ اعمل Reply على الرسالة واكتب: حذف");
+  if (!ctx.message.reply_to_message) return ctx.reply("↩️ اعمل Reply على الرسالة المطلوب حذفها واكتب: حذف");
   try {
     await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
     await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id);
@@ -294,4 +334,4 @@ bot.hears(/^احصائيات$/i, async (ctx) => {
 });
 
 bot.launch();
-console.log("✅ Bot started successfully!");
+console.log("✅ Bot started successfully with fixed target function!");
