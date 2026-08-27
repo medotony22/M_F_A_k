@@ -58,142 +58,166 @@ function getName(user) {
 }
 
 bot.start((ctx) => {
-  if (ctx.chat.type === "private") {
-    ctx.reply(`🤖 أهلاً بيك يا ${getName(ctx.from)} في بوت الحماية والترحيب.`);
+  try {
+    if (ctx.chat.type === "private") {
+      ctx.reply(`🤖 أهلاً بيك يا ${getName(ctx.from)} في بوت الحماية والترحيب.`);
+    }
+  } catch (e) {}
+});
+
+// ترحيب العضو الجديد مع حماية تامة
+bot.on("new_chat_members", async (ctx) => {
+  try {
+    for (const member of ctx.message.new_chat_members) {
+      if (member.id === ctx.botInfo.id) continue; // لو البوت هو اللي انضاف، تجاهل
+      
+      const name = getName(member);
+      const username = member.username ? `@${member.username}` : "بدون يوزر";
+      const now = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
+      
+      const chatData = getChatData(ctx.chat.id);
+      chatData.users[member.id] = { name, username, joinTime: now, count: 0, isMuted: false };
+
+      await ctx.reply(
+        `مرحبا بك في جروبنا المتواضع، نورت الجروب، متنساش تشترك في القناة 🌹\n\n` +
+        `👤 الاسم: ${name}\n` +
+        `🔗 اليوزر: ${username}\n` +
+        `📥 تاريخ ووقت الدخول: ${now}\n\n` +
+        `📢 رابط قناتنا:\n${CHANNEL_LINK}`
+      );
+    }
+  } catch (err) {
+    console.error("New member error:", err.message);
   }
 });
 
-bot.on("new_chat_members", async (ctx) => {
-  for (const member of ctx.message.new_chat_members) {
-    const name = getName(member);
-    const username = member.username ? `@${member.username}` : "بدون يوزر";
-    const now = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
-    
+// مغادرة العضو مع حماية تامة
+bot.on("left_chat_member", async (ctx) => {
+  try {
+    const member = ctx.message.left_chat_member;
+    if (!member || member.id === ctx.botInfo.id) return;
+
     const chatData = getChatData(ctx.chat.id);
-    chatData.users[member.id] = { name, username, joinTime: now, count: 0, isMuted: false };
+    const uData = chatData.users[member.id] || {};
+    const name = uData.name || getName(member);
+    const username = uData.username || (member.username ? `@${member.username}` : "بدون يوزر");
+    const joinTime = uData.joinTime || "غير محدد";
+    const leaveTime = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
 
     await ctx.reply(
-      `مرحبا بك في جروبنا المتواضع، نورت الجروب، متنساش تشترك في القناة 🌹\n\n` +
+      `🚪 **مغادرة عضو من الجروب**\n\n` +
       `👤 الاسم: ${name}\n` +
       `🔗 اليوزر: ${username}\n` +
-      `📥 تاريخ ووقت الدخول: ${now}\n\n` +
-      `📢 رابط قناتنا:\n${CHANNEL_LINK}`
+      `📥 وقت وتاريخ الدخول: ${joinTime}\n` +
+      `📤 وقت وتاريخ الخروج: ${leaveTime}`
     );
+  } catch (err) {
+    console.error("Left member error:", err.message);
   }
-});
-
-bot.on("left_chat_member", async (ctx) => {
-  const member = ctx.message.left_chat_member;
-  if (!member) return;
-
-  const chatData = getChatData(ctx.chat.id);
-  const uData = chatData.users[member.id] || {};
-  const name = uData.name || getName(member);
-  const username = uData.username || (member.username ? `@${member.username}` : "بدون يوزر");
-  const joinTime = uData.joinTime || "غير محدد";
-  const leaveTime = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
-
-  await ctx.reply(
-    `🚪 **مغادرة عضو من الجروب**\n\n` +
-    `👤 الاسم: ${name}\n` +
-    `🔗 اليوزر: ${username}\n` +
-    `📥 وقت وتاريخ الدخول: ${joinTime}\n` +
-    `📤 وقت وتاريخ الخروج: ${leaveTime}`
-  );
 });
 
 async function getTarget(ctx) {
-  if (ctx.message.reply_to_message?.from) {
-    return ctx.message.reply_to_message.from;
-  }
-  
-  const text = ctx.message.text.trim();
-  const parts = text.split(/\s+/);
-  parts.shift();
-  const query = parts.join(" ").trim();
-  
-  if (!query) return null;
-
-  const chatData = getChatData(ctx.chat.id);
-
-  if (/^\d+$/.test(query)) {
-    const userId = Number(query);
-    if (!chatData.users[userId]) {
-      chatData.users[userId] = { name: "عضو", username: "بدون", count: 0, isMuted: false };
+  try {
+    if (ctx.message.reply_to_message?.from) {
+      return ctx.message.reply_to_message.from;
     }
-    return { id: userId, first_name: chatData.users[userId].name, username: chatData.users[userId].username };
-  }
-
-  const qClean = query.replace("@", "").toLowerCase();
-  for (const uId in chatData.users) {
-    const u = chatData.users[uId];
-    const uName = (u.name || "").toLowerCase();
-    const uUser = (u.username || "").replace("@", "").toLowerCase();
     
-    if (uUser === qClean || uName.includes(qClean)) {
-      return { id: Number(uId), first_name: u.name, username: u.username };
-    }
-  }
+    const text = ctx.message.text.trim();
+    const parts = text.split(/\s+/);
+    parts.shift();
+    const query = parts.join(" ").trim();
+    
+    if (!query) return null;
 
-  const fakeId = Date.now();
-  chatData.users[fakeId] = { name: query, username: query.startsWith("@") ? query : `@${query}`, count: 0, isMuted: false };
-  return { id: fakeId, first_name: query, username: chatData.users[fakeId].username };
+    const chatData = getChatData(ctx.chat.id);
+
+    if (/^\d+$/.test(query)) {
+      const userId = Number(query);
+      if (!chatData.users[userId]) {
+        chatData.users[userId] = { name: "عضو", username: "بدون", count: 0, isMuted: false };
+      }
+      return { id: userId, first_name: chatData.users[userId].name, username: chatData.users[userId].username };
+    }
+
+    const qClean = query.replace("@", "").toLowerCase();
+    for (const uId in chatData.users) {
+      const u = chatData.users[uId];
+      const uName = (u.name || "").toLowerCase();
+      const uUser = (u.username || "").replace("@", "").toLowerCase();
+      
+      if (uUser === qClean || uName.includes(qClean)) {
+        return { id: Number(uId), first_name: u.name, username: u.username };
+      }
+    }
+
+    const fakeId = Date.now();
+    chatData.users[fakeId] = { name: query, username: query.startsWith("@") ? query : `@${query}`, count: 0, isMuted: false };
+    return { id: fakeId, first_name: query, username: chatData.users[fakeId].username };
+  } catch {
+    return null;
+  }
 }
 
+// مراقبة الشتائم والروابط مع حماية تامة
 bot.on("message", async (ctx) => {
-  if (ctx.chat.type === "private") return;
-  if (!ctx.message.text) return;
+  try {
+    if (ctx.chat.type === "private") return;
+    if (!ctx.message.text) return;
 
-  const text = ctx.message.text.trim();
-  const adminCommands = ["كتم", "فك الكتم", "تحذير", "تحذيرات", "مسح التحذيرات", "حذف", "احصائيات", "طرد", "حظر", "فك الحظر", "المكتومين"];
-  if (adminCommands.some(cmd => text.startsWith(cmd))) return;
+    const text = ctx.message.text.trim();
+    const adminCommands = ["كتم", "فك الكتم", "تحذير", "تحذيرات", "مسح التحذيرات", "حذف", "احصائيات", "طرد", "حظر", "فك الحظر", "المكتومين"];
+    if (adminCommands.some(cmd => text.startsWith(cmd))) return;
 
-  const user = ctx.from;
-  if (!user || (await isAdmin(ctx, user.id))) return;
+    const user = ctx.from;
+    if (!user || (await isAdmin(ctx, user.id))) return;
 
-  const chatData = getChatData(ctx.chat.id);
-  if (!chatData.users[user.id]) {
-    chatData.users[user.id] = { name: getName(user), username: user.username ? `@${user.username}` : "بدون يوزر", count: 0, isMuted: false };
-  }
+    const chatData = getChatData(ctx.chat.id);
+    if (!chatData.users[user.id]) {
+      chatData.users[user.id] = { name: getName(user), username: user.username ? `@${user.username}` : "بدون يوزر", count: 0, isMuted: false };
+    }
 
-  const linkRegex = /(https?:\/\/|www\.|t\.me\/|telegram\.me\/|discord\.gg\/)/i;
-  let isViolation = false;
-  let reason = "";
+    const linkRegex = /(https?:\/\/|www\.|t\.me\/|telegram\.me\/|discord\.gg\/)/i;
+    let isViolation = false;
+    let reason = "";
 
-  if (linkRegex.test(text)) {
-    isViolation = true;
-    reason = "نشر رابط ممنوع";
-  } else {
-    const lower = text.toLowerCase();
-    if (BAD_WORDS.some(w => lower.includes(w.toLowerCase()))) {
+    if (linkRegex.test(text)) {
       isViolation = true;
-      reason = "استخدام كلمات مسيئة وممنوعة";
-    }
-  }
-
-  if (isViolation) {
-    try { await ctx.deleteMessage(); } catch {}
-
-    chatData.users[user.id].count += 1;
-    const count = chatData.users[user.id].count;
-    const name = chatData.users[user.id].name;
-    const username = chatData.users[user.id].username;
-
-    if (count >= 4) {
-      try {
-        await ctx.telegram.restrictChatMember(ctx.chat.id, user.id, {
-          permissions: { can_send_messages: false }
-        });
-        chatData.users[user.id].isMuted = true;
-        await ctx.reply(`🚨 **كتم دائم**\n👤 العضو: ${name} (${username})\n📌 السبب: ${reason}\n⚠️ عدد المخالفات: ${count} (تم الكتم النهائي ولن يُفك إلا بواسطة الإدارة).`);
-      } catch {}
-      return;
+      reason = "نشر رابط ممنوع";
+    } else {
+      const lower = text.toLowerCase();
+      if (BAD_WORDS.some(w => lower.includes(w.toLowerCase()))) {
+        isViolation = true;
+        reason = "استخدام كلمات مسيئة وممنوعة";
+      }
     }
 
-    await ctx.reply(`⚠️ **تنبيه حماية**\n👤 العضو: ${name} (${username})\n📌 السبب: ${reason}\n⚠️ التحذيرات: ${count}/3\n🚨 المخالفة الرابعة = كتم دائم!`);
+    if (isViolation) {
+      try { await ctx.deleteMessage(); } catch {}
+
+      chatData.users[user.id].count += 1;
+      const count = chatData.users[user.id].count;
+      const name = chatData.users[user.id].name;
+      const username = chatData.users[user.id].username;
+
+      if (count >= 4) {
+        try {
+          await ctx.telegram.restrictChatMember(ctx.chat.id, user.id, {
+            permissions: { can_send_messages: false }
+          });
+          chatData.users[user.id].isMuted = true;
+          await ctx.reply(`🚨 **كتم دائم**\n👤 العضو: ${name} (${username})\n📌 السبب: ${reason}\n⚠️ عدد المخالفات: ${count} (تم الكتم النهائي ولن يُفك إلا بواسطة الإدارة).`);
+        } catch {}
+        return;
+      }
+
+      await ctx.reply(`⚠️ **تنبيه حماية**\n👤 العضو: ${name} (${username})\n📌 السبب: ${reason}\n⚠️ التحذيرات: ${count}/3\n🚨 المخالفة الرابعة = كتم دائم!`);
+    }
+  } catch (err) {
+    console.error("Message handler error:", err.message);
   }
 });
 
+// أوامر الإدارة مع حماية تامة
 bot.hears(/^تحذير/i, async (ctx) => {
   if (!(await isAdmin(ctx, ctx.from.id))) return ctx.reply("❌ للمشرفين فقط.");
   const target = await getTarget(ctx);
@@ -326,12 +350,11 @@ bot.hears(/^احصائيات$/i, async (ctx) => {
   await ctx.reply(`📊 إجمالي الإنذارات المسجلة: ${total}`);
 });
 
-// تدمير أي ويب هوك قديم أو جلسة معلقة تماماً قبل التشغيل لمنع خطأ 409
 async function startBot() {
   try {
     await bot.telegram.deleteWebhook({ drop_pending_updates: true });
     await bot.launch();
-    console.log("✅ Bot started successfully without conflict!");
+    console.log("✅ Bot started successfully with full error handling!");
   } catch (err) {
     console.error("❌ Error starting bot:", err.message);
   }
