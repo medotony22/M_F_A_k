@@ -2,7 +2,7 @@ const { Telegraf } = require('telegraf');
 const sqlite3 = require('sqlite3').verbose();
 
 // استبدل التوكن الخاص ببوت الحماية هنا
-const bot = new Telegraf('8982046146:AAEIRNYA2l5eVt29HNXfnHykB1pPYJdwqOQ');
+const bot = new Telegraf('YOUR_PROTECTION_BOT_TOKEN');
 
 // إعداد قاعدة البيانات (SQLite) لتخزين المكتومين والتحذيرات
 const db = new sqlite3.Database('./protection_bot.db', (err) => {
@@ -19,6 +19,13 @@ db.run(`CREATE TABLE IF NOT EXISTS warnings (
 )`);
 
 db.run(`CREATE TABLE IF NOT EXISTS link_warnings (
+    user_id TEXT,
+    chat_id TEXT,
+    count INTEGER,
+    PRIMARY KEY (user_id, chat_id)
+)`);
+
+db.run(`CREATE TABLE IF NOT EXISTS manual_warnings (
     user_id TEXT,
     chat_id TEXT,
     count INTEGER,
@@ -59,20 +66,34 @@ async function isAdmin(ctx, userId) {
     }
 }
 
-// دالة شاملة وذكية لجلب المستخدم (سواء بالرد، أو باليوزر @username، أو بالـ ID الرقمي)
+// دالة ذكية جداً ومعدلة لتعتمد أولاً وقبل كل شيء على الرد (Reply)
 async function getTargetUser(ctx) {
     try {
-        // 1. لو عامل رد (Reply) على رسالة
+        // 1. الأولوية القصوى والأساسية: الرد (Reply) على رسالة العضو
         if (ctx.message.reply_to_message) {
-            const repliedUser = ctx.message.reply_to_message.from_user;
-            if (repliedUser) {
-                return { id: repliedUser.id, name: repliedUser.first_name || 'المستخدم' };
+            const replied = ctx.message.reply_to_message;
+            // أ) جلب المستخدم مباشرة من معلومات الرسالة المردود عليها (حتى لو ملوش يوزر)
+            if (replied.from && replied.from.id) {
+                return { id: replied.from.id, name: replied.from.first_name || 'المستخدم' };
+            }
+            // ب) لو الرسالة تحتوي على ID مكتوب بداخلها
+            if (replied.text) {
+                const idMatch = replied.text.match(/\d{5,15}/);
+                if (idMatch) {
+                    const userId = parseInt(idMatch[0]);
+                    try {
+                        const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
+                        return { id: member.user.id, name: member.user.first_name || 'المستخدم' };
+                    } catch (e) {
+                        return { id: userId, name: 'المستخدم' };
+                    }
+                }
             }
         }
 
         const text = ctx.message.text || '';
-        
-        // 2. لو كاتب يوزر (يبدأ بـ @)
+
+        // 2. البحث عن طريق اليوزر (@username) لو تم كتابته بجانب الأمر
         const usernameMatch = text.match(/@([a-zA-Z0-9_]+)/);
         if (usernameMatch) {
             const username = usernameMatch[1];
@@ -80,17 +101,15 @@ async function getTargetUser(ctx) {
             return { id: chatMember.user.id, name: chatMember.user.first_name || username };
         }
 
-        // 3. لو كاتب آي دي رقمي (أرقام صحيحة في نص الرسالة)
-        const parts = text.split(/\s+/);
-        for (let part of parts) {
-            if (/^\d{5,15}$/.test(part)) {
-                const userId = parseInt(part);
-                try {
-                    const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, userId);
-                    return { id: chatMember.user.id, name: chatMember.user.first_name || 'المستخدم' };
-                } catch (e) {
-                    return { id: userId, name: 'مستخدم' };
-                }
+        // 3. البحث عن طريق الـ ID الرقمي لو تم كتابته في نص الأمر
+        const idMatch = text.match(/\d{5,15}/);
+        if (idMatch) {
+            const userId = parseInt(idMatch[0]);
+            try {
+                const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
+                return { id: member.user.id, name: member.user.first_name || 'المستخدم' };
+            } catch (e) {
+                return { id: userId, name: 'المستخدم' };
             }
         }
     } catch (e) {
@@ -99,7 +118,7 @@ async function getTargetUser(ctx) {
     return null;
 }
 
-// 1. أمر مسح الرسائل (يدعم مسح عدد معين، أو "مسح الكل"، أو بالرد)
+// 1. أمر مسح الرسائل
 bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -147,7 +166,7 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     }
 });
 
-// 2. أمر الكتم (بالرد، أو اليوزر، أو الـ ID)
+// 2. أمر الكتم (يعمل بالرد المباشر بامتياز)
 bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -156,7 +175,7 @@ bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد على رسالة الشخص، أو كتابة يوزره (@username)، أو إرفاق الـ ID الخاص به.');
+            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد كتمه.');
         }
 
         const chatId = ctx.chat.id;
@@ -177,11 +196,11 @@ bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
         await ctx.reply(`تم كتم العضو [${target.name}] بنجاح 🔇`);
     } catch (error) {
         console.error('خطأ في الكتم:', error);
-        await ctx.reply('حدث خطأ، تأكد من صحة البيانات وصلاحيات البوت الإدارية.');
+        await ctx.reply('حدث خطأ، تأكد من صلاحيات البوت الإدارية.');
     }
 });
 
-// 3. أمر فك الكتم / تكلم (بالرد، أو اليوزر، أو الـ ID)
+// 3. أمر فك الكتم / تكلم
 bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -190,7 +209,7 @@ bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد على رسالة الشخص، أو كتابة يوزره (@username)، أو إرفاق الـ ID الخاص به.');
+            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد إلغاء كتمه.');
         }
 
         const chatId = ctx.chat.id;
@@ -207,15 +226,16 @@ bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
         db.run(`DELETE FROM muted_users WHERE user_id = ? AND chat_id = ?`, [target.id, chatId]);
         db.run(`DELETE FROM warnings WHERE user_id = ? AND chat_id = ?`, [target.id, chatId]);
         db.run(`DELETE FROM link_warnings WHERE user_id = ? AND chat_id = ?`, [target.id, chatId]);
+        db.run(`DELETE FROM manual_warnings WHERE user_id = ? AND chat_id = ?`, [target.id, chatId]);
 
         await ctx.reply(`تم إلغاء الكتم عن العضو [${target.name}] 🔊`);
     } catch (error) {
         console.error('خطأ في إلغاء الكتم:', error);
-        await ctx.reply('حدث خطأ، تأكد من صحة البيانات وصلاحيات البوت.');
+        await ctx.reply('حدث خطأ، تأكد من صلاحيات البوت.');
     }
 });
 
-// 4. أمر طرد العضو (بالرد، أو اليوزر، أو الـ ID)
+// 4. أمر طرد العضو (يعمل بالرد المباشر بامتياز)
 bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -224,7 +244,7 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد على رسالة الشخص المراد طرده، أو كتابة يوزره (@username)، أو إرفاق الـ ID.');
+            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد طرده.');
         }
 
         const chatId = ctx.chat.id;
@@ -232,19 +252,65 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
             return ctx.reply('لا يمكنك طرد مشرف من المجموعة!');
         }
 
-        // طرد العضو من المجموعة
         await ctx.telegram.banChatMember(chatId, target.id);
-        // السماح له بالدخول برابط الدعوة لاحقاً (بمعنى طرد فقط وليس حظر نهائي أبدي)
         await ctx.telegram.unbanChatMember(chatId, target.id);
 
         await ctx.reply(`تم طرد العضو [${target.name}] من المجموعة بنجاح 👢`);
     } catch (error) {
         console.error('خطأ في الطرد:', error);
-        await ctx.reply('حدث خطأ، تأكد أن البوت يمتلك صلاحية حظر/طرد المستخدمين.');
+        await ctx.reply('حدث خطأ، تأكد أن البوت يمتلك صلاحية طرد المستخدمين.');
     }
 });
 
-// 5. أمر عرض المكتومين
+// 5. أمر التحذير اليدوي (بالرد المباشر: تحذير 1، تحذير 2، والثالث كتم)
+bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
+    try {
+        if (!await isAdmin(ctx, ctx.message.from.id)) {
+            return ctx.reply('هذا الأمر للمشرفين فقط.');
+        }
+
+        const target = await getTargetUser(ctx);
+        if (!target) {
+            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد تحذيره.');
+        }
+
+        const chatId = ctx.chat.id;
+        if (await isAdmin(ctx, target.id)) {
+            return ctx.reply('لا يمكنك تحذير مشرف في المجموعة!');
+        }
+
+        db.get(`SELECT count FROM manual_warnings WHERE user_id = ? AND chat_id = ?`, [target.id, chatId], async (err, row) => {
+            let count = row ? row.count : 0;
+            count += 1;
+
+            if (count === 1) {
+                db.run(`INSERT OR REPLACE INTO manual_warnings (user_id, chat_id, count) VALUES (?, ?, ?)`, [target.id, chatId, count]);
+                await ctx.reply(`⚠️ تحذير (1/2) موجه إلى العضو [${target.name}]. يرجى الالتزام بقوانين المجموعة.`);
+            } else if (count === 2) {
+                db.run(`INSERT OR REPLACE INTO manual_warnings (user_id, chat_id, count) VALUES (?, ?, ?)`, [target.id, chatId, count]);
+                await ctx.reply(`⚠️ تحذير أخير (2/2) موجه إلى العضو [${target.name}]. الإنذار القادم سيؤدي للكتم التلقائي!`);
+            } else {
+                // التحذير الثالث -> كتم تلقائي
+                await ctx.telegram.restrictChatMember(chatId, target.id, {
+                    permissions: {
+                        can_send_messages: false,
+                        can_send_media_messages: false,
+                        can_send_other_messages: false,
+                        can_add_web_page_previews: false
+                    }
+                });
+                db.run(`INSERT OR REPLACE INTO muted_users (user_id, chat_id) VALUES (?, ?)`, [target.id, chatId]);
+                db.run(`DELETE FROM manual_warnings WHERE user_id = ? AND chat_id = ?`, [target.id, chatId]);
+                await ctx.reply(`🔇 تم كتم العضو [${target.name}] لتجاوزه الحد الأقصى من التحذيرات اليدوية.`);
+            }
+        });
+    } catch (error) {
+        console.error('خطأ في التحذير اليدوي:', error);
+        await ctx.reply('حدث خطأ أثناء تنفيذ التحذير.');
+    }
+});
+
+// 6. أمر عرض المكتومين
 bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -273,7 +339,7 @@ bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
     }
 });
 
-// 6. نظام الحماية الشامل (الشتائم + الروابط مع السماح بالصور والفيديوهات)
+// 7. نظام الحماية الشامل التلقائي (الروابط والشتائم)
 bot.on('message', async (ctx, next) => {
     if (ctx.chat.type === 'private') return next();
 
@@ -304,7 +370,7 @@ bot.on('message', async (ctx, next) => {
 
                 if (linkWarns < 3) {
                     db.run(`INSERT OR REPLACE INTO link_warnings (user_id, chat_id, count) VALUES (?, ?, ?)`, [user.id, chatId, linkWarns]);
-                    const msg = await ctx.reply(`⚠️ ممنوع نشر الروابط يا ${user.first_name}!\nإنذار نشر روابط (${linkWarns}/3). الوصول للإنذار الثالث يؤدي للكتم.`);
+                    const msg = await ctx.reply(`⚠️ ممنوع نشر الروابط يا ${user.first_name}!\nإنذار نشر روابط (${linkWarns}/3).`);
                     setTimeout(async () => {
                         try { await ctx.telegram.deleteMessage(chatId, msg.message_id); } catch(e) {}
                     }, 5000);
@@ -344,7 +410,7 @@ bot.on('message', async (ctx, next) => {
 
                 if (warningsCount < 3) {
                     db.run(`INSERT OR REPLACE INTO warnings (user_id, chat_id, count) VALUES (?, ?, ?)`, [user.id, chatId, warningsCount]);
-                    const msg = await ctx.reply(`⚠️ تنبيه يا ${user.first_name}! ممنوع استخدام الألفاظ المسيئة.\nالتحذير (${warningsCount}/3). الوصول للثالث يوجب الكتم.`);
+                    const msg = await ctx.reply(`⚠️ تنبيه يا ${user.first_name}! ممنوع استخدام الألفاظ المسيئة.\nالتحذير (${warningsCount}/3).`);
                     setTimeout(async () => {
                         try { await ctx.telegram.deleteMessage(chatId, msg.message_id); } catch(e) {}
                     }, 5000);
@@ -372,7 +438,7 @@ bot.on('message', async (ctx, next) => {
 });
 
 bot.launch().then(() => {
-    console.log('بوت الحماية المتكامل يعمل بأعلى كفاءة بكل الأوامر (كتم، فك كتم، طرد، مسح، فلتر الروابط)...');
+    console.log('بوت الحماية المتكامل يعمل بأعلى كفاءة الآن...');
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
