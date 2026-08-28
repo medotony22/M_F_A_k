@@ -2,7 +2,11 @@ const { Telegraf } = require('telegraf');
 const sqlite3 = require('sqlite3').verbose();
 
 // استبدل التوكن الخاص ببوت الحماية هنا
-const bot = new Telegraf('8982046146:AAEIRNYA2l5eVt29HNXfnHykB1pPYJdwqOQ');
+const bot = new Telegraf(process.env.BOT_TOKEN || '8982046146:AAEIRNYA2l5eVt29HNXfnHykB1pPYJdwqOQ');
+
+// معلومات المطور والقناة
+const DEV_USERNAME = '@mohamedthah';
+const CHANNEL_LINK = 'https://t.me/A_F_M_F';
 
 // إعداد قاعدة البيانات (SQLite) لتخزين المكتومين والتحذيرات
 const db = new sqlite3.Database('./protection_bot.db', (err) => {
@@ -112,7 +116,24 @@ async function getTargetUser(ctx) {
     return null;
 }
 
-// 1. أمر مسح الرسائل (تم تعديل "مسح الكل" ليحذف حتى 150 رسالة للخلف)
+// الرد في الخاص (الدردشة الفردية) بمعلومات المطور والقناة
+bot.start((ctx) => {
+    if (ctx.chat.type === 'private') {
+        ctx.reply(`أهلاً بك في بوت الحماية! 🤖\nإذا كنت بحاجة إلى أي مساعدة، يمكنك التواصل مع مطور البوت: ${DEV_USERNAME}\n\nولا تنسَ الاشتراك في القناة:\n${CHANNEL_LINK}`);
+    }
+});
+
+bot.on('message', async (ctx, next) => {
+    if (ctx.chat.type === 'private') {
+        try {
+            await ctx.reply(`أهلاً بك! أنا بوت حماية المجموعات. إذا كنت بحاجة إلى مساعدة، يمكنك التواصل مع مطور البوت: ${DEV_USERNAME}\n\nولا تنسَ الاشتراك في القناة:\n${CHANNEL_LINK}`);
+        } catch (e) {}
+        return;
+    }
+    return next();
+});
+
+// 1. أمر مسح الرسائل
 bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -125,13 +146,12 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
 
         if (text.includes('الكل')) {
             await ctx.deleteMessage(currentMsgId);
-            // محاولة حذف آخر 150 رسالة لتنظيف المحادثة بأكبر شكل ممكن
             for (let i = 1; i <= 150; i++) {
                 try {
                     await ctx.deleteMessage(currentMsgId - i);
                 } catch (e) {}
             }
-            const notify = alias = await ctx.reply('تم تنظيف ومسح الشات الأخير بنجاح 🧹');
+            const notify = await ctx.reply('تم تنظيف ومسح الشات الأخير بنجاح 🧹');
             setTimeout(async () => {
                 try { await ctx.telegram.deleteMessage(chatId, notify.message_id); } catch(e) {}
             }, 4000);
