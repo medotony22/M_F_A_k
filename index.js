@@ -2,7 +2,7 @@ const { Telegraf } = require('telegraf');
 const sqlite3 = require('sqlite3').verbose();
 
 // استبدل التوكن الخاص ببوت الحماية هنا
-const bot = new Telegraf('YOUR_PROTECTION_BOT_TOKEN');
+const bot = new Telegraf('8982046146:AAEIRNYA2l5eVt29HNXfnHykB1pPYJdwqOQ');
 
 // إعداد قاعدة البيانات (SQLite) لتخزين المكتومين والتحذيرات
 const db = new sqlite3.Database('./protection_bot.db', (err) => {
