@@ -66,17 +66,14 @@ async function isAdmin(ctx, userId) {
     }
 }
 
-// دالة ذكية جداً ومعدلة لتعتمد أولاً وقبل كل شيء على الرد (Reply)
+// دالة استخراج العضو (بالرد كأولوية قصوى، أو اليوزر، أو الـ ID)
 async function getTargetUser(ctx) {
     try {
-        // 1. الأولوية القصوى والأساسية: الرد (Reply) على رسالة العضو
         if (ctx.message.reply_to_message) {
             const replied = ctx.message.reply_to_message;
-            // أ) جلب المستخدم مباشرة من معلومات الرسالة المردود عليها (حتى لو ملوش يوزر)
             if (replied.from && replied.from.id) {
                 return { id: replied.from.id, name: replied.from.first_name || 'المستخدم' };
             }
-            // ب) لو الرسالة تحتوي على ID مكتوب بداخلها
             if (replied.text) {
                 const idMatch = replied.text.match(/\d{5,15}/);
                 if (idMatch) {
@@ -92,8 +89,6 @@ async function getTargetUser(ctx) {
         }
 
         const text = ctx.message.text || '';
-
-        // 2. البحث عن طريق اليوزر (@username) لو تم كتابته بجانب الأمر
         const usernameMatch = text.match(/@([a-zA-Z0-9_]+)/);
         if (usernameMatch) {
             const username = usernameMatch[1];
@@ -101,7 +96,6 @@ async function getTargetUser(ctx) {
             return { id: chatMember.user.id, name: chatMember.user.first_name || username };
         }
 
-        // 3. البحث عن طريق الـ ID الرقمي لو تم كتابته في نص الأمر
         const idMatch = text.match(/\d{5,15}/);
         if (idMatch) {
             const userId = parseInt(idMatch[0]);
@@ -118,7 +112,7 @@ async function getTargetUser(ctx) {
     return null;
 }
 
-// 1. أمر مسح الرسائل
+// 1. أمر مسح الرسائل (تم تعديل "مسح الكل" ليحذف حتى 150 رسالة للخلف)
 bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -131,12 +125,13 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
 
         if (text.includes('الكل')) {
             await ctx.deleteMessage(currentMsgId);
-            for (let i = 1; i <= 30; i++) {
+            // محاولة حذف آخر 150 رسالة لتنظيف المحادثة بأكبر شكل ممكن
+            for (let i = 1; i <= 150; i++) {
                 try {
                     await ctx.deleteMessage(currentMsgId - i);
                 } catch (e) {}
             }
-            const notify = await ctx.reply('تم تنظيف ومسح الرسائل الأخيرة بنجاح 🧹');
+            const notify = alias = await ctx.reply('تم تنظيف ومسح الشات الأخير بنجاح 🧹');
             setTimeout(async () => {
                 try { await ctx.telegram.deleteMessage(chatId, notify.message_id); } catch(e) {}
             }, 4000);
@@ -166,7 +161,7 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     }
 });
 
-// 2. أمر الكتم (يعمل بالرد المباشر بامتياز)
+// 2. أمر الكتم
 bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -175,7 +170,7 @@ bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد كتمه.');
+            return ctx.reply('الرجاء الرد على رسالة الشخص المراد كتمه.');
         }
 
         const chatId = ctx.chat.id;
@@ -209,7 +204,7 @@ bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد إلغاء كتمه.');
+            return ctx.reply('الرجاء الرد على رسالة الشخص المراد إلغاء كتمه.');
         }
 
         const chatId = ctx.chat.id;
@@ -235,7 +230,7 @@ bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
     }
 });
 
-// 4. أمر طرد العضو (يعمل بالرد المباشر بامتياز)
+// 4. أمر طرد العضو
 bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -244,7 +239,7 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد طرده.');
+            return ctx.reply('الرجاء الرد على رسالة الشخص المراد طرده.');
         }
 
         const chatId = ctx.chat.id;
@@ -262,7 +257,7 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
     }
 });
 
-// 5. أمر التحذير اليدوي (بالرد المباشر: تحذير 1، تحذير 2، والثالث كتم)
+// 5. أمر التحذير اليدوي
 bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
     try {
         if (!await isAdmin(ctx, ctx.message.from.id)) {
@@ -271,7 +266,7 @@ bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد (Reply) على رسالة الشخص المراد تحذيره.');
+            return ctx.reply('الرجاء الرد على رسالة الشخص المراد تحذيره.');
         }
 
         const chatId = ctx.chat.id;
@@ -290,7 +285,6 @@ bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
                 db.run(`INSERT OR REPLACE INTO manual_warnings (user_id, chat_id, count) VALUES (?, ?, ?)`, [target.id, chatId, count]);
                 await ctx.reply(`⚠️ تحذير أخير (2/2) موجه إلى العضو [${target.name}]. الإنذار القادم سيؤدي للكتم التلقائي!`);
             } else {
-                // التحذير الثالث -> كتم تلقائي
                 await ctx.telegram.restrictChatMember(chatId, target.id, {
                     permissions: {
                         can_send_messages: false,
