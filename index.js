@@ -58,10 +58,10 @@ const badWords = [
     "قحبه"
 ];
 
-// دالة للتحقق مما إذا كان المرسل مشرفاً (سواء بحسابه الشخصي أو متحدثاً باسم الجروب)
+// دالة التحقق من المشرفين وتدعم التحدث باسم المجموعة بشكل كامل
 async function isAdmin(ctx) {
     try {
-        // لو الشخص بيتكلم باسم الجروب (Anonymous Admin) والـ sender_chat هو نفس الجروب
+        // التحقق مما إذا كان المرسل هو الجروب نفسه (Anonymous Admin / التحدث باسم المجموعة)
         if (ctx.message && ctx.message.sender_chat && ctx.message.sender_chat.id === ctx.chat.id) {
             return true;
         }
@@ -69,7 +69,7 @@ async function isAdmin(ctx) {
         const userId = ctx.message && ctx.message.from ? ctx.message.from.id : null;
         if (!userId) return false;
         
-        // استثناء البوت المجهول لو ظهر كمرسل في حالات معينة
+        // استثناء البوت المجهول
         if (userId === 1087968824) return true; 
         
         const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, userId);
@@ -80,7 +80,7 @@ async function isAdmin(ctx) {
     }
 }
 
-// دالة لاستخراج العضو المستهدف بدقة تامة
+// دالة استخراج العضو المستهدف بدقة تامة (بالريلاي أو الآيدي أو اليوزر)
 async function getTargetUser(ctx) {
     try {
         if (ctx.message.reply_to_message) {
