@@ -58,11 +58,11 @@ const badWords = [
     "قحبه"
 ];
 
-// دالة التحقق من المشرفين وتدعم التحدث باسم المجموعة بشكل كامل
+// دالة التحقق من المشرفين وتدعم التحدث باسم المجموعة والأونر تماماً
 async function isAdmin(ctx) {
     try {
-        // التحقق مما إذا كان المرسل هو الجروب نفسه (Anonymous Admin / التحدث باسم المجموعة)
-        if (ctx.message && ctx.message.sender_chat && ctx.message.sender_chat.id === ctx.chat.id) {
+        // لو الرسالة مرسلة باسم الجروب نفسه (Anonymous Admin) أو القناة المرتبطة
+        if (ctx.message && ctx.message.sender_chat) {
             return true;
         }
 
@@ -80,14 +80,17 @@ async function isAdmin(ctx) {
     }
 }
 
-// دالة استخراج العضو المستهدف بدقة تامة (بالريلاي أو الآيدي أو اليوزر)
+// دالة استخراج العضو المستهدف بدقة لمنع كتم البوت نفسه ولجلب الآيدي السليم
 async function getTargetUser(ctx) {
     try {
+        const botId = ctx.telegram.botInfo ? ctx.telegram.botInfo.id : null;
+
         if (ctx.message.reply_to_message) {
             const replied = ctx.message.reply_to_message;
             
             if (replied.from && replied.from.id) {
-                if (replied.from.id !== 1087968824 && replied.from.id !== ctx.telegram.botInfo?.id) {
+                // منع استهداف البوت نفسه أو البوت المجهول
+                if (replied.from.id !== 1087968824 && replied.from.id !== botId) {
                     return { id: Number(replied.from.id), name: replied.from.first_name || 'المستخدم' };
                 }
             }
@@ -95,12 +98,18 @@ async function getTargetUser(ctx) {
             if (replied.text) {
                 const idMatches = replied.text.match(/\d{8,15}/g);
                 if (idMatches && idMatches.length > 0) {
-                    const userId = parseInt(idMatches[idMatches.length - 1], 10);
-                    try {
-                        const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
-                        return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
-                    } catch (e) {
-                        return { id: userId, name: 'المستخدم' };
+                    for (let matchStr of idMatches) {
+                        const userId = parseInt(matchStr, 10);
+                        if (userId !== botId) {
+                            try {
+                                const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
+                                if (member && member.user) {
+                                    return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
+                                }
+                            } catch (e) {
+                                return { id: userId, name: 'مستخدم' };
+                            }
+                        }
                     }
                 }
             }
@@ -112,17 +121,23 @@ async function getTargetUser(ctx) {
         if (usernameMatch) {
             const username = usernameMatch[1];
             const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, `@${username}`);
-            return { id: Number(chatMember.user.id), name: chatMember.user.first_name || username };
+            if (chatMember && chatMember.user.id !== botId) {
+                return { id: Number(chatMember.user.id), name: chatMember.user.first_name || username };
+            }
         }
 
         const idMatch = text.match(/\b\d{8,15}\b/);
         if (idMatch) {
             const userId = parseInt(idMatch[0], 10);
-            try {
-                const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
-                return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
-            } catch (e) {
-                return { id: userId, name: 'المستخدم' };
+            if (userId !== botId) {
+                try {
+                    const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
+                    if (member && member.user) {
+                        return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
+                    }
+                } catch (e) {
+                    return { id: userId, name: 'مستخدم' };
+                }
             }
         }
     } catch (e) {
