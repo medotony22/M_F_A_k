@@ -62,6 +62,9 @@ const badWords = [
 async function isAdmin(ctx, userId) {
     try {
         if (!userId) return false;
+        // استثناء البوت المجهول للجروب لو بيتحكم بالأمر كأونر أو مشرف رئيسي
+        if (userId === 1087968824) return true; 
+        
         const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, userId);
         const status = chatMember.status;
         return status === 'administrator' || status === 'creator';
@@ -70,21 +73,27 @@ async function isAdmin(ctx, userId) {
     }
 }
 
-// دالة استخراج العضو (بالرد كأولوية قصوى، أو اليوزر، أو الـ ID)
+// دالة استخراج العضو (بالرد كأولوية قصوى، أو اليوزر، أو الـ ID بشكل آمن منعا للأخطاء العشرية)
 async function getTargetUser(ctx) {
     try {
+        // 1. الحالة الأولى: الرد على رسالة
         if (ctx.message.reply_to_message) {
             const replied = ctx.message.reply_to_message;
             if (replied.from && replied.from.id) {
-                return { id: replied.from.id, name: replied.from.first_name || 'المستخدم' };
+                // تجنب استهداف البوت المجهول نفسه كعضو عادي
+                if (replied.from.id === 1087968824) {
+                    return null;
+                }
+                return { id: Number(replied.from.id), name: replied.from.first_name || 'المستخدم' };
             }
             if (replied.text) {
-                const idMatch = replied.text.match(/\d{5,15}/);
+                // استخراج الأرقام الصحيحة فقط وتجنب الكسور والعلامات العشرية
+                const idMatch = replied.text.match(/\b\d{5,15}\b/);
                 if (idMatch) {
-                    const userId = parseInt(idMatch[0]);
+                    const userId = parseInt(idMatch[0], 10);
                     try {
                         const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
-                        return { id: member.user.id, name: member.user.first_name || 'المستخدم' };
+                        return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
                     } catch (e) {
                         return { id: userId, name: 'المستخدم' };
                     }
@@ -93,19 +102,22 @@ async function getTargetUser(ctx) {
         }
 
         const text = ctx.message.text || '';
+        
+        // 2. الحالة الثانية: البحث بالـ Username
         const usernameMatch = text.match(/@([a-zA-Z0-9_]+)/);
         if (usernameMatch) {
             const username = usernameMatch[1];
             const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, `@${username}`);
-            return { id: chatMember.user.id, name: chatMember.user.first_name || username };
+            return { id: Number(chatMember.user.id), name: chatMember.user.first_name || username };
         }
 
-        const idMatch = text.match(/\d{5,15}/);
+        // 3. الحالة الثالثة: البحث برقم الـ ID المكتوب في النص (مع تنظيفه من أي علامات عشرية)
+        const idMatch = text.match(/\b\d{5,15}\b/);
         if (idMatch) {
-            const userId = parseInt(idMatch[0]);
+            const userId = parseInt(idMatch[0], 10);
             try {
                 const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
-                return { id: member.user.id, name: member.user.first_name || 'المستخدم' };
+                return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
             } catch (e) {
                 return { id: userId, name: 'المستخدم' };
             }
@@ -116,7 +128,7 @@ async function getTargetUser(ctx) {
     return null;
 }
 
-// الرد في الخاص (الدردشة الفردية) بمعلومات المطور والقناة
+// الرد في الخاص (الدردشة الفردية)
 bot.start((ctx) => {
     if (ctx.chat.type === 'private') {
         ctx.reply(`أهلاً بك في بوت الحماية! 🤖\nإذا كنت بحاجة إلى أي مساعدة، يمكنك التواصل مع مطور البوت: ${DEV_USERNAME}\n\nولا تنسَ الاشتراك في القناة:\n${CHANNEL_LINK}`);
@@ -136,7 +148,8 @@ bot.on('message', async (ctx, next) => {
 // 1. أمر مسح الرسائل
 bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     try {
-        if (!await isAdmin(ctx, ctx.message.from.id)) {
+        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
+        if (!await isAdmin(ctx, senderId)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -166,7 +179,7 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
 
         const match = text.match(/\d+/);
         if (match) {
-            const count = parseInt(match[0]);
+            const count = parseInt(match[0], 10);
             for (let i = 0; i <= count; i++) {
                 try {
                     await ctx.deleteMessage(currentMsgId - i);
@@ -184,13 +197,14 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
 // 2. أمر الكتم
 bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
     try {
-        if (!await isAdmin(ctx, ctx.message.from.id)) {
+        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
+        if (!await isAdmin(ctx, senderId)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد على رسالة الشخص المراد كتمه.');
+            return ctx.reply('الرجاء الرد على رسالة الشخص المراد كتمه أو كتابة ID صحيح.');
         }
 
         const chatId = ctx.chat.id;
@@ -198,7 +212,7 @@ bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
             return ctx.reply('لا يمكنك كتم مشرف في المجموعة!');
         }
 
-        await ctx.telegram.restrictChatMember(chatId, target.id, {
+        await ctx.telegram.restrictChatMember(chatId, Number(target.id), {
             permissions: {
                 can_send_messages: false,
                 can_send_media_messages: false,
@@ -218,18 +232,19 @@ bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
 // 3. أمر فك الكتم / تكلم
 bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
     try {
-        if (!await isAdmin(ctx, ctx.message.from.id)) {
+        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
+        if (!await isAdmin(ctx, senderId)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
         const target = await getTargetUser(ctx);
         if (!target) {
-            return ctx.reply('الرجاء الرد على رسالة الشخص المراد إلغاء كتمه.');
+            return ctx.reply('الرجاء الرد على رسالة الشخص المراد إلغاء كتمه أو كتابة ID صحيح.');
         }
 
         const chatId = ctx.chat.id;
 
-        await ctx.telegram.restrictChatMember(chatId, target.id, {
+        await ctx.telegram.restrictChatMember(chatId, Number(target.id), {
             permissions: {
                 can_send_messages: true,
                 can_send_media_messages: true,
@@ -253,7 +268,8 @@ bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
 // 4. أمر طرد العضو
 bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
     try {
-        if (!await isAdmin(ctx, ctx.message.from.id)) {
+        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
+        if (!await isAdmin(ctx, senderId)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -267,8 +283,8 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
             return ctx.reply('لا يمكنك طرد مشرف من المجموعة!');
         }
 
-        await ctx.telegram.banChatMember(chatId, target.id);
-        await ctx.telegram.unbanChatMember(chatId, target.id);
+        await ctx.telegram.banChatMember(chatId, Number(target.id));
+        await ctx.telegram.unbanChatMember(chatId, Number(target.id));
 
         await ctx.reply(`تم طرد العضو [${target.name}] من المجموعة بنجاح 👢`);
     } catch (error) {
@@ -280,7 +296,8 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
 // 5. أمر التحذير اليدوي
 bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
     try {
-        if (!await isAdmin(ctx, ctx.message.from.id)) {
+        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
+        if (!await isAdmin(ctx, senderId)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -305,7 +322,7 @@ bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
                 db.run(`INSERT OR REPLACE INTO manual_warnings (user_id, chat_id, count) VALUES (?, ?, ?)`, [target.id, chatId, count]);
                 await ctx.reply(`⚠️ تحذير أخير (2/2) موجه إلى العضو [${target.name}]. الإنذار القادم سيؤدي للكتم التلقائي!`);
             } else {
-                await ctx.telegram.restrictChatMember(chatId, target.id, {
+                await ctx.telegram.restrictChatMember(chatId, Number(target.id), {
                     permissions: {
                         can_send_messages: false,
                         can_send_media_messages: false,
@@ -327,7 +344,8 @@ bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
 // 6. أمر عرض المكتومين
 bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
     try {
-        if (!await isAdmin(ctx, ctx.message.from.id)) {
+        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
+        if (!await isAdmin(ctx, senderId)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -340,7 +358,7 @@ bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
             let listText = 'قائمة الأعضاء المكتومين:\n';
             for (let row of rows) {
                 try {
-                    const member = await ctx.telegram.getChatMember(chatId, row.user_id);
+                    const member = await ctx.telegram.getChatMember(chatId, Number(row.user_id));
                     listText += `- ${member.user.first_name} (ID: \`${row.user_id}\`)\n`;
                 } catch (e) {
                     listText += `- مستخدم (ID: \`${row.user_id}\`)\n`;
@@ -389,7 +407,7 @@ bot.on('message', async (ctx, next) => {
                         try { await ctx.telegram.deleteMessage(chatId, msg.message_id); } catch(e) {}
                     }, 5000);
                 } else {
-                    await ctx.telegram.restrictChatMember(chatId, user.id, {
+                    await ctx.telegram.restrictChatMember(chatId, Number(user.id), {
                         permissions: {
                             can_send_messages: false,
                             can_send_media_messages: false,
@@ -429,7 +447,7 @@ bot.on('message', async (ctx, next) => {
                         try { await ctx.telegram.deleteMessage(chatId, msg.message_id); } catch(e) {}
                     }, 5000);
                 } else {
-                    await ctx.telegram.restrictChatMember(chatId, user.id, {
+                    await ctx.telegram.restrictChatMember(chatId, Number(user.id), {
                         permissions: {
                             can_send_messages: false,
                             can_send_media_messages: false,
