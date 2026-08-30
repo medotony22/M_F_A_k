@@ -58,11 +58,18 @@ const badWords = [
     "قحبه"
 ];
 
-// دالة للتحقق مما إذا كان المستخدم مشرفاً (Admin) في المجموعة
-async function isAdmin(ctx, userId) {
+// دالة للتحقق مما إذا كان المرسل مشرفاً (سواء بحسابه الشخصي أو متحدثاً باسم الجروب)
+async function isAdmin(ctx) {
     try {
+        // لو الشخص بيتكلم باسم الجروب (Anonymous Admin) والـ sender_chat هو نفس الجروب
+        if (ctx.message && ctx.message.sender_chat && ctx.message.sender_chat.id === ctx.chat.id) {
+            return true;
+        }
+
+        const userId = ctx.message && ctx.message.from ? ctx.message.from.id : null;
         if (!userId) return false;
-        // استثناء البوت المجهول للجروب لو بيتحكم بالأمر كأونر أو مشرف رئيسي
+        
+        // استثناء البوت المجهول لو ظهر كمرسل في حالات معينة
         if (userId === 1087968824) return true; 
         
         const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, userId);
@@ -73,24 +80,22 @@ async function isAdmin(ctx, userId) {
     }
 }
 
-// دالة استخراج العضو (بالرد كأولوية قصوى، أو اليوزر، أو الـ ID بشكل آمن منعا للأخطاء العشرية)
+// دالة لاستخراج العضو المستهدف بدقة تامة
 async function getTargetUser(ctx) {
     try {
-        // 1. الحالة الأولى: الرد على رسالة
         if (ctx.message.reply_to_message) {
             const replied = ctx.message.reply_to_message;
+            
             if (replied.from && replied.from.id) {
-                // تجنب استهداف البوت المجهول نفسه كعضو عادي
-                if (replied.from.id === 1087968824) {
-                    return null;
+                if (replied.from.id !== 1087968824 && replied.from.id !== ctx.telegram.botInfo?.id) {
+                    return { id: Number(replied.from.id), name: replied.from.first_name || 'المستخدم' };
                 }
-                return { id: Number(replied.from.id), name: replied.from.first_name || 'المستخدم' };
             }
+            
             if (replied.text) {
-                // استخراج الأرقام الصحيحة فقط وتجنب الكسور والعلامات العشرية
-                const idMatch = replied.text.match(/\b\d{5,15}\b/);
-                if (idMatch) {
-                    const userId = parseInt(idMatch[0], 10);
+                const idMatches = replied.text.match(/\d{8,15}/g);
+                if (idMatches && idMatches.length > 0) {
+                    const userId = parseInt(idMatches[idMatches.length - 1], 10);
                     try {
                         const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
                         return { id: Number(member.user.id), name: member.user.first_name || 'المستخدم' };
@@ -103,7 +108,6 @@ async function getTargetUser(ctx) {
 
         const text = ctx.message.text || '';
         
-        // 2. الحالة الثانية: البحث بالـ Username
         const usernameMatch = text.match(/@([a-zA-Z0-9_]+)/);
         if (usernameMatch) {
             const username = usernameMatch[1];
@@ -111,8 +115,7 @@ async function getTargetUser(ctx) {
             return { id: Number(chatMember.user.id), name: chatMember.user.first_name || username };
         }
 
-        // 3. الحالة الثالثة: البحث برقم الـ ID المكتوب في النص (مع تنظيفه من أي علامات عشرية)
-        const idMatch = text.match(/\b\d{5,15}\b/);
+        const idMatch = text.match(/\b\d{8,15}\b/);
         if (idMatch) {
             const userId = parseInt(idMatch[0], 10);
             try {
@@ -128,7 +131,7 @@ async function getTargetUser(ctx) {
     return null;
 }
 
-// الرد في الخاص (الدردشة الفردية)
+// الرد في الخاص
 bot.start((ctx) => {
     if (ctx.chat.type === 'private') {
         ctx.reply(`أهلاً بك في بوت الحماية! 🤖\nإذا كنت بحاجة إلى أي مساعدة، يمكنك التواصل مع مطور البوت: ${DEV_USERNAME}\n\nولا تنسَ الاشتراك في القناة:\n${CHANNEL_LINK}`);
@@ -148,8 +151,7 @@ bot.on('message', async (ctx, next) => {
 // 1. أمر مسح الرسائل
 bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
     try {
-        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
-        if (!await isAdmin(ctx, senderId)) {
+        if (!await isAdmin(ctx)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -197,8 +199,7 @@ bot.hears(/^(?:\/)?مسح(?:\s+(الكل|(\d+)))?$/i, async (ctx) => {
 // 2. أمر الكتم
 bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
     try {
-        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
-        if (!await isAdmin(ctx, senderId)) {
+        if (!await isAdmin(ctx)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -232,8 +233,7 @@ bot.hears(/^(?:\/)?كتم/i, async (ctx) => {
 // 3. أمر فك الكتم / تكلم
 bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
     try {
-        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
-        if (!await isAdmin(ctx, senderId)) {
+        if (!await isAdmin(ctx)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -268,8 +268,7 @@ bot.hears(/^(?:\/)?(تكلم|فك الكتم)/i, async (ctx) => {
 // 4. أمر طرد العضو
 bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
     try {
-        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
-        if (!await isAdmin(ctx, senderId)) {
+        if (!await isAdmin(ctx)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -296,8 +295,7 @@ bot.hears(/^(?:\/)?طرد/i, async (ctx) => {
 // 5. أمر التحذير اليدوي
 bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
     try {
-        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
-        if (!await isAdmin(ctx, senderId)) {
+        if (!await isAdmin(ctx)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -344,8 +342,7 @@ bot.hears(/^(?:\/)?تحذير/i, async (ctx) => {
 // 6. أمر عرض المكتومين
 bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
     try {
-        const senderId = ctx.message.from ? ctx.message.from.id : (ctx.senderChat ? ctx.senderChat.id : null);
-        if (!await isAdmin(ctx, senderId)) {
+        if (!await isAdmin(ctx)) {
             return ctx.reply('هذا الأمر للمشرفين فقط.');
         }
 
@@ -355,13 +352,13 @@ bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
                 return ctx.reply('لا يوجد أي أعضاء مكتومين حالياً في هذه المجموعة.');
             }
 
-            let listText = 'قائمة الأعضاء المكتومين:\n';
+            let listText = 'قائمة الأعضاء المكتومين:\n\n';
             for (let row of rows) {
                 try {
                     const member = await ctx.telegram.getChatMember(chatId, Number(row.user_id));
-                    listText += `- ${member.user.first_name} (ID: \`${row.user_id}\`)\n`;
+                    listText += `👤 ${member.user.first_name}\n🆔 \`${row.user_id}\`\n\n`;
                 } catch (e) {
-                    listText += `- مستخدم (ID: \`${row.user_id}\`)\n`;
+                    listText += `👤 مستخدم\n🆔 \`${row.user_id}\`\n\n`;
                 }
             }
             await ctx.reply(listText, { parse_mode: 'Markdown' });
@@ -371,7 +368,7 @@ bot.hears(/^(?:\/)?المكتومين$/i, async (ctx) => {
     }
 });
 
-// 7. نظام الحماية الشامل التلقائي (الروابط والشتائم)
+// 7. نظام الحماية الشامل التلقائي
 bot.on('message', async (ctx, next) => {
     if (ctx.chat.type === 'private') return next();
 
@@ -382,14 +379,13 @@ bot.on('message', async (ctx, next) => {
         return next();
     }
 
-    if (await isAdmin(ctx, user.id)) {
+    if (await isAdmin(ctx)) {
         return next();
     }
 
     const text = ctx.message.text || ctx.message.caption || '';
     const lowerText = text.toLowerCase();
 
-    // أ) فحص الروابط
     const hasLink = /https?:\/\/|www\.|t\.me\/|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(text);
 
     if (hasLink) {
@@ -426,7 +422,6 @@ bot.on('message', async (ctx, next) => {
         }
     }
 
-    // ب) فحص الكلمات المسيئة
     const containsBadWord = badWords.some(word => {
         const regex = new RegExp(`(^|\\s)${word}($|\\s|[.,!؟])`, 'i');
         return regex.test(lowerText) || lowerText.includes(word);
